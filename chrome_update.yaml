@@ -1,6 +1,6 @@
 ---
 - name: Update Google Chrome on Ubuntu
-  hosts: your_target_hosts
+  hosts: all
   become: yes
   tasks:
     - name: Ensure wget is installed
