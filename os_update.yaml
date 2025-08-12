@@ -1,0 +1,60 @@
+---
+- hosts: ubuntu18
+  become: yes
+  gather_facts: yes
+  serial: 1   # Upgrade one machine at a time
+
+  pre_tasks:
+    - name: Check current Ubuntu version
+      ansible.builtin.command: lsb_release -rs
+      register: ubuntu_version
+      changed_when: false
+
+    - name: Fail if not Ubuntu 18.04
+      ansible.builtin.fail:
+        msg: "This host is not Ubuntu 18.04. Found {{ ubuntu_version.stdout }}"
+      when: ubuntu_version.stdout != "18.04"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages before release upgrade
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Ensure update-manager-core is installed
+      apt:
+        name: update-manager-core
+        state: present
+
+    - name: Set release-upgrades to normal
+      lineinfile:
+        path: /etc/update-manager/release-upgrades
+        regexp: '^Prompt='
+        line: 'Prompt=normal'
+
+    - name: Start Ubuntu release upgrade
+      shell: |
+        DEBIAN_FRONTEND=noninteractive \
+        do-release-upgrade -f DistUpgradeViewNonInteractive -q
+      args:
+        warn: false
+
+    - name: Reboot after upgrade
+      reboot:
+        msg: "Rebooting after Ubuntu 18.04 → 20.04 upgrade..."
+        reboot_timeout: 3600
+
+  post_tasks:
+    - name: Confirm new OS version
+      ansible.builtin.command: lsb_release -rs
+      register: new_version
+      changed_when: false
+
+    - name: Show upgrade result
+      debug:
+        msg: "Upgrade complete. New version: {{ new_version.stdout }}"
