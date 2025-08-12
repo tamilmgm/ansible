@@ -1,6 +1,8 @@
 ---
 - name: Update Google Chrome on Ubuntu
   hosts: all
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.8
   become: yes
   tasks:
     - name: Ensure wget is installed
