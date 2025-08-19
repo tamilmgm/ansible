@@ -1,0 +1,24 @@
+---
+- hosts: all
+  become: yes
+
+  vars:
+    chrome_deb_local_path: "./google-chrome-stable_current_amd64.deb"
+    chrome_deb_remote_path: "/tmp/google-chrome-stable_current_amd64.deb"
+
+  tasks:
+
+    - name: Copy Chrome .deb file to target
+      copy:
+        src: "{{ chrome_deb_local_path }}"
+        dest: "{{ chrome_deb_remote_path }}"
+        mode: '0644'
+
+    - name: Install Chrome from .deb file
+      apt:
+        deb: "{{ chrome_deb_remote_path }}"
+
+    - name: Clean up the .deb file
+      file:
+        path: "{{ chrome_deb_remote_path }}"
+        state: absent

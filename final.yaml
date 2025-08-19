@@ -1,0 +1,99 @@
+---
+- name: Fully Reset Chrome Profile, Clear Cache and Restore Bookmarks (remote backup/restore)
+  hosts: all
+  become: true
+
+  vars:
+    chrome_user: user                          # Change to your actual username
+    chrome_config_path: "/home/{{ chrome_user }}/.config/google-chrome"
+    chrome_cache_path: "/home/{{ chrome_user }}/.cache/google-chrome"
+    chrome_profile_path: "{{ chrome_config_path }}/Default"
+    bookmarks_backup_remote: "/home/{{ chrome_user }}/Bookmarks-backup.json"
+    display_env: ":0"
+
+  tasks:
+    - name: Get UID of chrome_user
+      command: id -u {{ chrome_user }}
+      register: user_uid_result
+      changed_when: false
+
+    - name: Set user_uid fact
+      set_fact:
+        user_uid: "{{ user_uid_result.stdout }}"
+
+    - name: Kill Chrome if running (for user {{ chrome_user }})
+      become_user: "{{ chrome_user }}"
+      shell: "pkill -9 -u {{ chrome_user }} chrome || true"
+      ignore_errors: true
+
+    - name: Pause for 3 seconds to ensure Chrome is fully stopped
+      pause:
+        seconds: 3
+
+    - name: Check for any remaining Chrome processes
+      shell: pgrep -u {{ chrome_user }} chrome || true
+      register: chrome_processes
+      changed_when: false
+
+    - name: Fail if Chrome processes still running
+      fail:
+        msg: "Chrome processes still running, cannot delete profile safely"
+      when: chrome_processes.stdout != ""
+
+    - name: Backup bookmarks file (remote to remote) — always copy fresh
+      become_user: "{{ chrome_user }}"
+      shell: cp "{{ chrome_profile_path }}/Bookmarks" "{{ bookmarks_backup_remote }}"
+
+    - name: Delete entire Chrome config folder to clear all Chrome profiles, cookies, settings
+      file:
+        path: "{{ chrome_config_path }}"
+        state: absent
+
+    - name: Delete Chrome cache folder to clear caches, images, temp files
+      file:
+        path: "{{ chrome_cache_path }}"
+        state: absent
+
+    - name: Launch Chrome once to regenerate profile
+      become_user: "{{ chrome_user }}"
+      environment:
+        DISPLAY: "{{ display_env }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ user_uid }}/bus"
+      shell: "google-chrome --no-first-run &"
+      async: 5
+      poll: 0
+
+    - name: Wait for Chrome Default profile folder to be created
+      become_user: "{{ chrome_user }}"
+      wait_for:
+        path: "{{ chrome_profile_path }}"
+        state: present
+        timeout: 20
+
+    - name: Kill Chrome again to stop it before restore
+      become_user: "{{ chrome_user }}"
+      shell: "pkill -9 -u {{ chrome_user }} chrome || true"
+      ignore_errors: true
+
+    - name: Restore bookmarks into new Chrome profile (remote backup to profile)
+      copy:
+        remote_src: yes
+        src: "{{ bookmarks_backup_remote }}"
+        dest: "{{ chrome_profile_path }}/Bookmarks"
+        owner: "{{ chrome_user }}"
+        group: "{{ chrome_user }}"
+        mode: '0600'
+
+    - name: Pause for 3 seconds to ensure file sync
+      pause:
+        seconds: 3
+
+    # Optional: Relaunch Chrome after restore if desired
+    - name: Relaunch Chrome
+      become_user: "{{ chrome_user }}"
+      environment:
+         DISPLAY: "{{ display_env }}"
+         DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ user_uid }}/bus"
+      shell: "google-chrome --no-first-run &"
+      async: 5
+      poll: 0
