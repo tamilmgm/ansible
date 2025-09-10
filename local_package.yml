@@ -1,0 +1,32 @@
+---
+- hosts: all
+  become: yes
+
+  vars:
+    deb_local_path: "./google.deb"
+    deb_remote_path: "/tmp/google.deb"
+
+  tasks:
+
+    - name: Disable broken appstreamcli APT hook (if it exists)
+      lineinfile:
+        path: /etc/apt/apt.conf.d/50appstream
+        regexp: '^APT::Update::Post-Invoke-Success'
+        state: absent
+      ignore_errors: yes  # In case the file doesn't exist on all systems
+
+    - name: Copy NoMachine .deb file to target
+      copy:
+        src: "{{ deb_local_path }}"
+        dest: "{{ deb_remote_path }}"
+        mode: '0644'
+
+    - name: Install NoMachine from .deb file
+      apt:
+        deb: "{{ deb_remote_path }}"
+        update_cache: no
+
+    - name: Clean up the .deb file
+      file:
+        path: "{{ deb_remote_path }}"
+        state: absent

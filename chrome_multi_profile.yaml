@@ -1,0 +1,81 @@
+---
+- name: Clear Chrome Cache and Browsing History (keep cookies & passwords)
+  hosts: all
+  become: true
+
+  vars:
+    chrome_user: user                          # Change to actual user
+    chrome_config_path: "/home/{{ chrome_user }}/.config/google-chrome"
+    chrome_cache_path: "/home/{{ chrome_user }}/.cache/google-chrome"
+    chrome_profile_path: "{{ chrome_config_path }}/Default"
+    display_env: ":0"
+
+  tasks:
+    - name: Get UID of chrome_user
+      command: id -u {{ chrome_user }}
+      register: user_uid_result
+      changed_when: false
+
+    - name: Set user_uid fact
+      set_fact:
+        user_uid: "{{ user_uid_result.stdout }}"
+
+    - name: Kill Chrome if running
+      become_user: "{{ chrome_user }}"
+      shell: "pkill -9 -u {{ chrome_user }} chrome || true"
+      ignore_errors: true
+
+    - name: Pause to ensure Chrome has exited
+      pause:
+        seconds: 5
+
+    - name: Ensure no Chrome processes remain
+      shell: pgrep -u {{ chrome_user }} chrome || true
+      register: chrome_processes
+      changed_when: false
+
+    - name: Fail if Chrome is still running
+      fail:
+        msg: "Chrome is still running!"
+      when: chrome_processes.stdout != ""
+
+    # 🧹 Clear only cache and history — leave cookies and passwords intact
+    - name: Delete Chrome cache folder
+      file:
+        path: "{{ chrome_cache_path }}"
+        state: absent
+
+    - name: Delete Chrome browsing history file
+      file:
+        path: "{{ chrome_profile_path }}/History"
+        state: absent
+
+    # Remove other profiles' history if they exist
+    - name: Delete additional Chrome profiles history files
+      file:
+        path: "{{ chrome_config_path }}/{{ item }}/History"
+        state: absent
+      loop:
+        - "Profile 1"
+        - "Profile 2"
+        - "Profile 3"
+      when: chrome_user is defined
+
+    # Remove other Chrome cache directories if they exist
+    - name: Delete other Chrome cache directories
+      file:
+        path: "{{ chrome_cache_path }}/{{ item }}"
+        state: absent
+      loop:
+        - "GPUCache"
+        - "Media Cache"
+      when: chrome_user is defined
+
+    - name: Relaunch Chrome
+      become_user: "{{ chrome_user }}"
+      environment:
+         DISPLAY: "{{ display_env }}"
+         DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ user_uid }}/bus"
+      shell: "google-chrome --no-first-run &"
+      async: 5
+      poll: 0
